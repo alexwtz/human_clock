@@ -10,9 +10,6 @@
 
 
 RTC_DS1307 rtc;
-//int RST_PIN = 8;
-//int RELAY_PIN = 9;
-
 const uint8_t PIN_DCF77 = 3;
 char daysOfTheWeek[7][12] = { "Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday" };
 
@@ -23,7 +20,12 @@ Adafruit_PWMServoDriver pwm3 = Adafruit_PWMServoDriver(0x42);
 Adafruit_PWMServoDriver pwm[] = { pwm1, pwm2, pwm3 };
 
 uint16_t digitPWMCurrent[10][6][2];
-uint16_t digitPWM[10][6][2] = {
+
+const uint8_t STEP8 = 15
+const uint8_t STEP_MAX = 120
+
+//fine tuning for each servo to be at position midday
+uint16_t initialPWM[10][6][2] = {
   //0
   {
     //servo0 -> {aiguille0, aiguille2}
@@ -108,6 +110,92 @@ uint16_t digitPWM[10][6][2] = {
     { 0, 0 } }
 };
 
+uint16_t digitPWM[10][6][2] = {
+  //0
+  {
+    //servo0 -> {aiguille0, aiguille2}
+    { 4, 2 },
+    //servo1
+    { 6, 4 },
+    { 0, 4 },
+    { 0, 4 },
+    { 0, 2 },
+    { 0, 6 } },
+  //1
+  {
+    { 4, 4 },
+    { 1, 1 },
+    { 0, 4 },
+    { 1, 1 },
+    { 0, 0 },
+    { 1, 1 } },
+  //2
+  {
+    { 2, 2 },
+    { 6, 4 },
+    { 2, 4 },
+    { 0, 6 },
+    { 0, 2 },
+    { 6, 6 } },
+  //3
+  {
+    { 2, 2 },
+    { 6, 4 },
+    { 2, 2 },
+    { 6, 0 },
+    { 2, 2 },
+    { 6, 6 } },
+  //4
+  {
+    { 4, 4 },
+    { 4, 4 },
+    { 0, 2 },
+    { 0, 6 },
+    { 5, 5 },
+    { 0, 0 } },
+  //5
+  {
+    { 2, 4 },
+    { 6, 6 },
+    { 0, 2 },
+    { 6, 4 },
+    { 2, 2 },
+    { 6, 0 } },
+  //6
+  {
+    { 2, 4 },
+    { 6, 6 },
+    { 0, 2 },
+    { 6, 4 },
+    { 2, 2 },
+    { 6, 0 } },
+  //7
+  {
+    { 2, 2 },
+    { 6, 4 },
+    { 5, 5 },
+    { 6, 4 },
+    { 5, 5 },
+    { 0, 0 } },
+  //8
+  {
+    { 2, 4 },
+    { 6, 4 },
+    { 2, 4 },
+    { 6, 4 },
+    { 0, 2 },
+    { 0, 6 } },
+  //9
+  {
+    { 2, 4 },
+    { 6, 4 },
+    { 0, 2 },
+    { 6, 0 },
+    { 5, 5 },
+    { 0, 0 } }
+};
+
+//configure the correct servo at correct position according to wiring
 uint8_t screenConfig[4][6][2][2] = {
   { { { 0, 0 }, { 0, 1 } },
     { { 0, 2 }, { 0, 3 } },
@@ -153,35 +241,22 @@ void setup() {
     pwm[i].setPWMFreq(SERVO_FREQ);  // Analog servos run at ~50 Hz updates
   }
 
-  pinMode(PIN_DCF77, INPUT);
-
-  if (!rtc.begin()) {
-    Serial.println("Couldn't find RTC");
-    Serial.flush();
-  }
-  Serial.println("RTC found");
-
-
-  if (!rtc.isrunning()) {
-    Serial.println("RTC is NOT running, let's set the time!");
-    // When time needs to be set on a new device, or after a power loss, the
+  //RTC
+  Wire.begin();
+  RTC.begin();
+  if (!RTC.isrunning()) {
+    Serial.println("RTC is NOT running!");
+                              //
     // following line sets the RTC to the date & time this sketch was compiled
-    //rtc.adjust(DateTime(F(__DATE__), F(__TIME__)));
-    // This line sets the RTC with an explicit date & time, for example to set
-    // January 1, 2023 at 0am you would call:
-    rtc.adjust(DateTime(2023, 1, 1, 0, 0, 0));
+    RTC.adjust(DateTime(__DATE__, __TIME__));
+  } else {
+    displayTime();
   }
-
-  // When time needs to be re-set on a previously configured device, the
-  // following line sets the RTC to the date & time this sketch was compiled
-  // rtc.adjust(DateTime(F(__DATE__), F(__TIME__)));
-  // This line sets the RTC with an explicit date & time, for example to set
-  // January 21, 2014 at 3am you would call:
-  //rtc.adjust(DateTime(2021, 1, 21, 3, 0, 0));
+  //DCF77
+  pinMode(PIN_DCF77, INPUT);
 
   Serial.println("Demo decodage signal DCF77\n");
   Serial.println("Recherche pulsation...");
-  displayTime();
 
   delay(1);
 }
@@ -264,7 +339,7 @@ void Serial_print99(uint8_t nombre) {
 
 
 uint16_t getNextPos(uint8_t digit, uint8_t servo, uint8_t aiguille) {
-  uint16_t dest = digitPWM[digit][servo][aiguille];
+  uint16_t dest = initialPWM[digit][servo][aiguille] + STEP8 * digitPWM[digit][servo][aiguille];
   uint16_t cur = digitPWMCurrent[digit][servo][aiguille];
   uint16_t step = 1;
   if (dest == cur) {
@@ -300,7 +375,6 @@ void loop() {
   bool trame_decodee = decodeurDCF77.traiterSignal(digitalRead(PIN_DCF77), millis());
 
   if (trame_decodee) {
-    Serial.print(' ');
     Serial_printDCF77();
   }
 
@@ -311,8 +385,8 @@ void loop() {
 
   while (longueur < decodeurDCF77.longueur_trame_en_cours()) {
     Serial.print(decodeurDCF77.bit_trame(longueur++));
-    //displayTime();
   }
+
   DateTime now = rtc.now();
   int hh = now.hour();
   int mm = now.minute();
