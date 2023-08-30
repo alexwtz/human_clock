@@ -8,6 +8,11 @@
 #include <Arduino.h>
 #include "decodeurDCF77.h"
 
+#define SERVOMIN 150   // This is the 'minimum' pulse length count (out of 4096)
+#define SERVOMAX 600   // This is the 'maximum' pulse length count (out of 4096)
+#define USMIN 600      // This is the rounded 'minimum' microsecond length based on the minimum pulse of 150
+#define USMAX 2400     // This is the rounded 'maximum' microsecond length based on the maximum pulse of 600
+#define SERVO_FREQ 50  // Analog servos run at ~50 Hz updates
 
 RTC_DS1307 rtc;
 const uint8_t PIN_DCF77 = 3;
@@ -19,98 +24,25 @@ Adafruit_PWMServoDriver pwm2 = Adafruit_PWMServoDriver(0x41);
 Adafruit_PWMServoDriver pwm3 = Adafruit_PWMServoDriver(0x42);
 Adafruit_PWMServoDriver pwm[] = { pwm1, pwm2, pwm3 };
 
-uint16_t digitPWMCurrent[10][6][2];
-
-const uint8_t STEP8 = 15
-const uint8_t STEP_MAX = 120
-
-//fine tuning for each servo to be at position midday
-uint16_t initialPWM[10][6][2] = {
-  //0
-  {
-    //servo0 -> {aiguille0, aiguille2}
-    { 0, 0 },
-    //servo1
-    { 0, 0 },
-    { 0, 0 },
-    { 0, 0 },
-    { 0, 0 },
-    { 0, 0 } },
-  //1
-  {
-    { 0, 0 },
-    { 0, 0 },
-    { 0, 0 },
-    { 0, 0 },
-    { 0, 0 },
-    { 0, 0 } },
-  //2
-  {
-    { 0, 0 },
-    { 0, 0 },
-    { 0, 0 },
-    { 0, 0 },
-    { 0, 0 },
-    { 0, 0 } },
-  //3
-  {
-    { 0, 0 },
-    { 0, 0 },
-    { 0, 0 },
-    { 0, 0 },
-    { 0, 0 },
-    { 0, 0 } },
-  //4
-  {
-    { 0, 0 },
-    { 0, 0 },
-    { 0, 0 },
-    { 0, 0 },
-    { 0, 0 },
-    { 0, 0 } },
-  //5
-  {
-    { 0, 0 },
-    { 0, 0 },
-    { 0, 0 },
-    { 0, 0 },
-    { 0, 0 },
-    { 0, 0 } },
-  //6
-  {
-    { 0, 0 },
-    { 0, 0 },
-    { 0, 0 },
-    { 0, 0 },
-    { 0, 0 },
-    { 0, 0 } },
-  //7
-  {
-    { 0, 0 },
-    { 0, 0 },
-    { 0, 0 },
-    { 0, 0 },
-    { 0, 0 },
-    { 0, 0 } },
-  //8
-  {
-    { 0, 0 },
-    { 0, 0 },
-    { 0, 0 },
-    { 0, 0 },
-    { 0, 0 },
-    { 0, 0 } },
-  //9
-  {
-    { 0, 0 },
-    { 0, 0 },
-    { 0, 0 },
-    { 0, 0 },
-    { 0, 0 },
-    { 0, 0 } }
+uint16_t digitPWMCurrent[4][6][2] = {
+  {{SERVOMIN,SERVOMIN},{SERVOMIN,SERVOMIN},{SERVOMIN,SERVOMIN},{SERVOMIN,SERVOMIN},{SERVOMIN,SERVOMIN},{SERVOMIN,SERVOMIN}},
+  {{SERVOMIN,SERVOMIN},{SERVOMIN,SERVOMIN},{SERVOMIN,SERVOMIN},{SERVOMIN,SERVOMIN},{SERVOMIN,SERVOMIN},{SERVOMIN,SERVOMIN}},
+  {{SERVOMIN,SERVOMIN},{SERVOMIN,SERVOMIN},{SERVOMIN,SERVOMIN},{SERVOMIN,SERVOMIN},{SERVOMIN,SERVOMIN},{SERVOMIN,SERVOMIN}},
+  {{SERVOMIN,SERVOMIN},{SERVOMIN,SERVOMIN},{SERVOMIN,SERVOMIN},{SERVOMIN,SERVOMIN},{SERVOMIN,SERVOMIN},{SERVOMIN,SERVOMIN}}
 };
 
-uint16_t digitPWM[10][6][2] = {
+uint16_t digitPWMFix[4][6][2] = {
+  {{1,1},{1,1},{1,1},{1,1},{1,1},{1,1}},
+  {{1,1},{1,1},{1,1},{1,1},{1,1},{1,1}},
+  {{1,1},{1,1},{1,1},{1,1},{1,1},{1,1}},
+  {{1,1},{1,1},{1,1},{1,1},{1,1},{1,1}}
+};
+
+const uint8_t STEP8 = 15;
+const uint8_t STEP_MAX = 120;
+
+
+uint16_t digitPWM[12][6][2] = {
   //0
   {
     //servo0 -> {aiguille0, aiguille2}
@@ -192,44 +124,56 @@ uint16_t digitPWM[10][6][2] = {
     { 0, 2 },
     { 6, 0 },
     { 5, 5 },
-    { 0, 0 } }
+    { 0, 0 } },
+  //A all up
+  {
+    { 0, 0 },
+    { 0, 0 },
+    { 0, 0 },
+    { 0, 0 },
+    { 0, 0 },
+    { 0, 0 } },
+  //A all down
+  {
+    { 4, 4 },
+    { 4, 4 },
+    { 4, 4 },
+    { 4, 4 },
+    { 4, 4 },
+    { 4, 4 } }
 };
 
 //configure the correct servo at correct position according to wiring
 uint8_t screenConfig[4][6][2][2] = {
-  { { { 0, 0 }, { 0, 1 } },
-    { { 0, 2 }, { 0, 3 } },
-    { { 0, 4 }, { 0, 5 } },
-    { { 0, 6 }, { 0, 7 } },
-    { { 0, 8 }, { 0, 9 } },
-    { { 0, 10 }, { 0, 11 } } },
-  { { { 0, 12 }, { 0, 13 } },
-    { { 0, 14 }, { 0, 15 } },
-    { { 1, 0 }, { 1, 1 } },
-    { { 1, 2 }, { 1, 3 } },
+  { { { 1, 0 }, { 1, 1 } },
     { { 1, 4 }, { 1, 5 } },
-    { { 1, 6 }, { 1, 7 } } },
-  {
+    { { 1, 2 }, { 1, 3 } },
+    { { 1, 6 }, { 1, 7 } },
+    { { 0, 0 }, { 0, 1 } },
+    { { 0, 2 }, { 0, 3 } } },
+  {  
     { { 1, 8 }, { 1, 9 } },
-    { { 1, 10 }, { 1, 11 } },
     { { 1, 12 }, { 1, 13 } },
+    { { 1, 10 }, { 1, 11 } },
     { { 1, 14 }, { 1, 15 } },
-    { { 2, 2 }, { 2, 3 } },
+    { { 0, 4 }, { 0, 5 } },
+    { { 0, 6 }, { 0, 7 } } },
+  {
     { { 2, 0 }, { 2, 1 } },
-  },
-  { { { 2, 4 }, { 2, 5 } },
+    { { 2, 4 }, { 2, 5 } },
+    { { 2, 2 }, { 2, 3 } },
     { { 2, 6 }, { 2, 7 } },
-    { { 2, 8 }, { 2, 9 } },
-    { { 2, 10 }, { 2, 11 } },
+    { { 0, 8 }, { 0, 9 } },
+    { { 0, 10 }, { 0, 11 } },
+  },
+  { { { 2, 8 }, { 2, 9 } },
     { { 2, 12 }, { 2, 13 } },
-    { { 2, 14 }, { 2, 15 } } }
+    { { 2, 10 }, { 2, 11 } },
+    { { 2, 14 }, { 2, 15 } },
+    { { 0, 12 }, { 0, 13 } },
+    { { 0, 14 }, { 0, 15 } } }
 };
 
-#define SERVOMIN 150   // This is the 'minimum' pulse length count (out of 4096)
-#define SERVOMAX 600   // This is the 'maximum' pulse length count (out of 4096)
-#define USMIN 600      // This is the rounded 'minimum' microsecond length based on the minimum pulse of 150
-#define USMAX 2400     // This is the rounded 'maximum' microsecond length based on the maximum pulse of 600
-#define SERVO_FREQ 50  // Analog servos run at ~50 Hz updates
 
 void setup() {
   Serial.begin(9600);
@@ -243,12 +187,12 @@ void setup() {
 
   //RTC
   Wire.begin();
-  RTC.begin();
-  if (!RTC.isrunning()) {
+  rtc.begin();
+  if (!rtc.isrunning()) {
     Serial.println("RTC is NOT running!");
                               //
     // following line sets the RTC to the date & time this sketch was compiled
-    RTC.adjust(DateTime(__DATE__, __TIME__));
+    rtc.adjust(DateTime(__DATE__, __TIME__));
   } else {
     displayTime();
   }
@@ -338,18 +282,18 @@ void Serial_print99(uint8_t nombre) {
 }
 
 
-uint16_t getNextPos(uint8_t digit, uint8_t servo, uint8_t aiguille) {
-  uint16_t dest = initialPWM[digit][servo][aiguille] + STEP8 * digitPWM[digit][servo][aiguille];
-  uint16_t cur = digitPWMCurrent[digit][servo][aiguille];
+uint16_t getNextPos(uint8_t screen, uint8_t digit, uint8_t servo, uint8_t aiguille) {
+  uint16_t dest = SERVOMIN + (STEP8 * digitPWM[digit][servo][aiguille] * digitPWMFix[screen][servo][aiguille]);
+  uint16_t cur = digitPWMCurrent[screen][servo][aiguille];
   uint16_t step = 1;
   if (dest == cur) {
     return cur;
   } else if (dest > cur) {
-    digitPWMCurrent[digit][servo][aiguille] += min(dest - cur, step);
+    digitPWMCurrent[screen][servo][aiguille] += min(dest - cur, step);
   } else {
-    digitPWMCurrent[digit][servo][aiguille] += max(dest - cur, -step);
+    digitPWMCurrent[screen][servo][aiguille] += max(dest - cur, -step);
   }
-  return digitPWMCurrent[digit][servo][aiguille];
+  return digitPWMCurrent[screen][servo][aiguille];
 }
 
 void displayDigit(uint8_t screen, uint8_t digit) {
@@ -357,7 +301,7 @@ void displayDigit(uint8_t screen, uint8_t digit) {
   for (uint16_t s = 0; s < 6; s++) {
     for (uint16_t a = 0; a < 2; a++) {
       //aiguille
-      pwm[screenConfig[screen][s][a][0]].setPWM(screenConfig[screen][s][a][1], 0, getNextPos(digit, s, a));
+      pwm[screenConfig[screen][s][a][0]].setPWM(screenConfig[screen][s][a][1], 0, getNextPos(screen,digit, s, a));
     }
   }
 }
@@ -370,6 +314,7 @@ void displayTime(uint8_t h1, uint8_t h2, uint8_t m1, uint8_t m2) {
 }
 
 void loop() {
+/* 
   static uint8_t longueur = 0;
 
   bool trame_decodee = decodeurDCF77.traiterSignal(digitalRead(PIN_DCF77), millis());
@@ -386,9 +331,13 @@ void loop() {
   while (longueur < decodeurDCF77.longueur_trame_en_cours()) {
     Serial.print(decodeurDCF77.bit_trame(longueur++));
   }
-
-  DateTime now = rtc.now();
-  int hh = now.hour();
-  int mm = now.minute();
-  displayTime(hh - (hh % 10), hh % 10, mm - (mm % 10), mm % 10);
+*/
+  
+  //DateTime now = rtc.now();
+  //int hh = now.hour();
+  //int mm = now.minute();
+  //displayTime(hh - (hh % 10), hh % 10, mm - (mm % 10), mm % 10);
+  displayTime(10, 10, 10, 10); //all up
+  
+  //displayTime(11,11,11,11);//all down
 }
